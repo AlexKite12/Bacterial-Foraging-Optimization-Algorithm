@@ -9,7 +9,7 @@ import random
 
 def func(args):
     # [0; pi], [-pi; pi] - область определения
-    f = -np.sin(args[0]) * np.sin(args[0] ** 2/np.pi)
+    f = -np.sin(args[0]) * np.sin(args[0] ** 2/np.pi) ** 2
     for i in range(1, len(args)):
         f += -np.sin(args[i]) * np.sin((i + 1) * args[i] ** 2/np.pi)
     return f
@@ -26,7 +26,7 @@ def makeData(minimum_num, maximum_num):
     return xgrid, ygrid, zgrid
 
 def generate_vector(min_length=-1, max_length=1, problem_size=3):
-    size = problem_size - 1
+    size = problem_size
     vec = np.random.uniform(min_length, max_length, size)
     return vec
 
@@ -63,7 +63,7 @@ class Cell(object):
         """
         limit = x_min, x_max, y_min....
         """
-        size = problem_size - 1
+        size = problem_size
         xy = np.random.uniform(min_num, max_num, size)
         z = func(xy)
         self.coord = np.hstack((xy, z))
@@ -95,16 +95,13 @@ class Cell(object):
     def __lt__(self, other):
         return self.coord[-1] < other.coord[-1]
 
-def compute_cell_interaction(cells, problem_size, d_attr, w_attr, h_rep, w_rep):
-    """ A bacteria cost is derated by its interaction with other cells. This function is calculated interaction
-    """
-    #for i in range(cells.shape[0] - 1)
-    g = np.zeros(len(cells))
-    for i in range(len(g)):
-        cells_array = np.vstack((cells[:i], cells[i + 1:]))
-        for j in range(cells_array.shape[0]):
-            g[i] += (-d_attr * np.exp(-w_attr * np.sum((cells[i][:problem_size] - cells_array[j][:problem_size]) ** 2))) + (h_rep * np.exp(-w_rep * np.sum((cells[i][:problem_size] - cells_array[j][:problem_size]) ** 2)))
-    return g
+    def compute_cell_interaction(self, cells):
+        """ A bacteria cost is derated by its interaction with other cells. This function is calculated interaction
+        """
+        for i in range(len(cells)):
+            self.interaction += (-self.d_attr * np.exp(-self.w_attr * np.sum((self.coord - cells[i].coord) ** 2)))
+            + (self.h_rep * np.exp(-self.w_rep * np.sum((self.coord - cells[i].coord) ** 2)))
+        return self.interaction
 
 def chemotaxis(cells, chem_steps, swim_length, step_size,
                 d_attr, w_attr, h_rep, w_rep, problem_size):
@@ -113,11 +110,11 @@ def chemotaxis(cells, chem_steps, swim_length, step_size,
         sum_nutrients = 0
         for i in range(len(cells)):
             cells[i].compute_cell_interaction(cells)
-            if best_cell == None or best_cell > cells[i].coord[-1]:
-                best_cell = cells[i].coord[-1] 
+            if best_cell == None or best_cell.coord[-1] > cells[i].coord[-1]:
+                best_cell = cells[i]
                 number_cell = i
             #print('best=', best_cell)
-            sum_nutrients += cells[i].calculate_fitness()
+            #sum_nutrients += cells[i].calculate_fitness()
             vec = generate_vector(problem_size=problem_size)
             for sl in range(swim_length):
                 new_cell = Cell(d_attr, w_attr, h_rep, w_rep)
@@ -125,19 +122,19 @@ def chemotaxis(cells, chem_steps, swim_length, step_size,
                 new_cell.tumble(step_size, vec, func)
                 cells_array = cells[:i] + cells[i + 1:]
                 new_cell.compute_cell_interaction(cells_array)
-                if new_cell.calculate_fitness() <= best_cell:
+                if new_cell.calculate_fitness() <= best_cell.calculate_fitness():
                     cells[i] = copy.copy(new_cell)
                     del new_cell
-                    sum_nutrients += cells[i].fitness
+                    #sum_nutrients += cells[i].fitness
                 else:
                     break
             cells[i].interaction = sum_nutrients
-        print('chemo={}, f={}, cost={}'.format(cs, best_cell, number_cell))
-    return best_cell, cells, number_cell
+        print('chemo={}, f={}, cost[{}]={}'.format(cs, best_cell.fitness, number_cell, cells[number_cell].coord))
+    return best_cell, cells
 
 def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s, 
     d_attract, w_attract, h_repellant, w_repellant, P_ed,
-    step_size, min_num=-10, max_num=10):
+    step_size, min_num=0, max_num=5):
     """ p: Dimension of the search space,
          S: Total number of bacteria in the population,
          Nc : The number of chemotactic steps,
@@ -154,10 +151,10 @@ def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s,
     best = None
     for ed in range(N_ed):
         for re in range(N_re):
-            c_best, cells, number_cell = chemotaxis(cells, N_c, N_s, step_size, d_attract, w_attract, h_repellant, w_repellant, problem_size)
-            if best == None or best > c_best:
-                best = c_best
-            print('best fitness = {}, coord = {}'.format(best, cells[number_cell].coord))
+            c_best, cells = chemotaxis(cells, N_c, N_s, step_size, d_attract, w_attract, h_repellant, w_repellant, problem_size)
+            if best == None or best.coord[-1] > c_best.coord[-1]:
+                best =copy.copy(c_best)
+            print('best fitness = {}, coord = {}'.format(best.fitness, best.coord))
 
             #sort
             #fck
@@ -165,12 +162,13 @@ def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s,
             cells = cells[:round(len(cells)/2)] + cells[:round(len(cells)/2)]
         for i in range(len(cells)):
             if random.random() < P_ed:
-                cells[i].initialize_coord
+                cells[i] = Cell(d_attract, w_attract, h_repellant, w_repellant)
+                cells[i].initialize_coord(problem_size, min_num, max_num, func)
 
 if __name__ == '__main__':
 
     #default coefficients
-    number_cells = 50
+    number_cells = 100
     d_attr = 0.1
     w_attr = 0.2
     h_repell = 0.1 # h_repell = d_attr
@@ -178,7 +176,7 @@ if __name__ == '__main__':
     step_size = 0.1 #C[i]
     elim_disp_steps = 1 # Ned is the number of elimination-dispersal steps
     repro_steps = 4 # Nre is the number of reproduction steps
-    chem_steps = 30 # Nc is the number of chemotaxis steps
+    chem_steps = 70 # Nc is the number of chemotaxis steps
     swim_length = 4 # Ns is the number of swim steps for a given cell
     p_eliminate = 0.25 # Ped
 
@@ -191,13 +189,13 @@ if __name__ == '__main__':
     # ax.legend()
     # plt.show()
     search_space =  [[-10, 10], [-10, 10]]
-    problem_size = 3
+    problem_size = 5
 
 
     my_cell = []
     for i in range(number_cells):
         my_cell.append(Cell(d_attr, w_attr, h_repell, w_repell))
-        my_cell[i].initialize_coord(problem_size, -5, 5, func)
+        my_cell[i].initialize_coord(problem_size, 0, 5, func)
     cells = np.array(my_cell)
     search_optimum(problem_size, number_cells, elim_disp_steps, repro_steps, chem_steps, swim_length,d_attr, w_attr, h_repell, w_repell, p_eliminate, step_size)
 
