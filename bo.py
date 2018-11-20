@@ -5,17 +5,22 @@ from matplotlib import cm
 import copy
 import sympy
 import random
+import time
+ 
+class Profiler(object):
+    def __enter__(self):
+        self._startTime = time.time()
+         
+    def __exit__(self, type, value, traceback):
+        print ("Elapsed time: {:.3f} sec".format(time.time() - self._startTime))
 
 
-def func(args):
+def func(args, m=10):
     # [0; pi], [-pi; pi] - область определения
-    f = -np.sin(args[0]) * np.sin(args[0] ** 2/np.pi) ** 2
-    for i in range(1, len(args)):
-        f += -np.sin(args[i]) * np.sin((i + 1) * args[i] ** 2/np.pi)
-    return f
-
-def func2(x, y):
-    return (x * x + y * y)**0.5 + 3 * np.cos((x * x + y * y)**0.5) + 5
+    f = 0
+    for i in range(len(args)):
+        f += np.sin(args[i]) * np.sin((i + 1) * (args[i] ** 2)/np.pi) ** (2 * m)
+    return -f
 
 def makeData(minimum_num, maximum_num):
     # Создаем двумерную матрицу-сетку
@@ -46,8 +51,9 @@ def draw_3D_graphic(cells_coord, minimum_num, maximum_num):
     except:
         print("Error")
 
-def draw_2D_graphic(first_p, second_p):
-    plt.plot(first_p, second_p)
+def draw_2D_graphic(first_p, second_p, legend='graph'):
+    plt.plot(first_p, second_p, legend = legend)
+    plt.legend()
     plt.show()
 
 
@@ -81,10 +87,8 @@ class Cell(object):
         return self.interaction
 
     def tumble(self, step_size, vec, func):
-        crd = []
         crd = self.coord[:-1] + step_size * vec
-        crd = np.append(crd, func(crd[:-1]))
-        self.coord = copy.copy(crd)
+        self.coord = np.hstack((crd, func(crd)))
 
 
     def swim(self, step_size, func):
@@ -98,7 +102,7 @@ class Cell(object):
         return self.fitness
 
     def __lt__(self, other):
-        return self.coord[-1] < other.coord[-1]
+        return self.fitness < other.fitness
 
     def compute_cell_interaction(self, cells):
         """ A bacteria cost is derated by its interaction with other cells. This function is calculated interaction
@@ -113,29 +117,21 @@ def chemotaxis(cells, chem_steps, swim_length, step_size,
                 d_attr, w_attr, h_rep, w_rep, problem_size):
     best_cell = None
     for cs in range(chem_steps):
-        sum_nutrients = 0
         for i in range(len(cells)):
             #cells[i].compute_cell_interaction(cells)
-            if best_cell == None or best_cell.coord[-1] > cells[i].coord[-1]:
-                best_cell = copy.copy(cells[i])
-                number_cell = i
-            #print('best=', best_cell)
-            #sum_nutrients += cells[i].calculate_fitness()
             vec = generate_vector(problem_size=problem_size)
+            new_cell = copy.copy(cells[i])
             for sl in range(swim_length):
-                new_cell = Cell(d_attr, w_attr, h_rep, w_rep)
-                new_cell.coord = np.array(cells[i].coord)
                 new_cell.tumble(step_size, vec, func)
-                cells_array = cells[:i] + cells[i + 1:]
-                new_cell.compute_cell_interaction(cells_array)
-                if new_cell.calculate_fitness() <= best_cell.fitness:
+                new_cell.compute_cell_interaction(cells)
+                if new_cell.calculate_fitness() <= cells[i].fitness:
                     cells[i] = copy.copy(new_cell)
-                    del new_cell
-                    #sum_nutrients += cells[i].fitness
                 else:
-                    break
-            #cells[i].interaction = sum_nutrients
-        print('chemo={}, f={}, cost[{}]={}'.format(cs, best_cell.fitness, number_cell, cells[number_cell].coord))
+                    vec = generate_vector(problem_size=problem_size)
+            if best_cell == None or best_cell.fitness > cells[i].fitness:
+                best_cell = copy.copy(cells[i])
+            del new_cell
+        #print('chemo={}, f={}, cost[{}]={}'.format(cs, best_cell.fitness, number_cell, cells[number_cell].coord))
     return best_cell, cells
 
 def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s, 
@@ -160,36 +156,38 @@ def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s,
         print("elim_disp_steps = ", ed)
         for re in range(N_re):
             c_best, cells = chemotaxis(cells, N_c, N_s, step_size, d_attract, w_attract, h_repellant, w_repellant, problem_size)
-            if best == None or best.coord[-1] > c_best.coord[-1]:
-                best =copy.copy(c_best)
+            if best == None or best.fitness > c_best.fitness:
+                best = copy.copy(c_best)
+            del c_best
             print('best fitness = {}, coord = {}'.format(best.fitness, best.coord))
-
-            #sort
-            #fck
             cells.sort()
             cells = cells[:round(len(cells)/2)] + cells[:round(len(cells)/2)]
-        for i in range(len(cells)):
-            if random.random() < P_ed:
-                cells[i] = Cell(d_attract, w_attract, h_repellant, w_repellant)
-                cells[i].initialize_coord(problem_size, min_num, max_num, func)
-        r.append(best.fitness)
-    draw_2D_graphic(np.linspace(1, N_ed, N_ed), np.array(r))
+            for i in range(len(cells)):
+                if random.random() < P_ed:
+                    cells[i] = Cell(d_attract, w_attract, h_repellant, w_repellant)
+                    cells[i].initialize_coord(problem_size, min_num, max_num, func)
+                    cells[i].compute_cell_interaction(cells)
+                    cells[i].calculate_fitness()
+            r.append(best.fitness)
+    draw_2D_graphic(np.linspace(1, N_ed * N_re, N_ed * N_re), np.array(r))
 
 if __name__ == '__main__':
 
     #default coefficients
-    number_cells = 100
+    number_cells = 20
     d_attr = 0.1
     w_attr = 0.2
     h_repell = 0.1 # h_repell = d_attr
     w_repell = 10
-    step_size = 0.1 #C[i]
-    elim_disp_steps = 10 # Ned is the number of elimination-dispersal steps
+    step_size = 0.01 #C[i]
+    elim_disp_steps = 20 # Ned is the number of elimination-dispersal steps
     repro_steps = 4 # Nre is the number of reproduction steps
-    chem_steps = 70 # Nc is the number of chemotaxis steps
+    chem_steps = 100 # Nc is the number of chemotaxis steps
     swim_length = 4 # Ns is the number of swim steps for a given cell
     p_eliminate = 0.25 # Ped
 
+    coord = [2.0890882, 1.56956964, 1.30172081, 1.91837155, 1.71718343]
+    print('function = ', func(coord))
     #The step size is commonly a small fraction of the search space, such as 0.1.
     #for i in range(cells_init.shape[0]):
     # print('cost = ', compute_cell_interaction(cells_init, 3, d_attr, w_attr, h_repell, w_repell))
@@ -199,10 +197,12 @@ if __name__ == '__main__':
     # ax.legend()
     # plt.show()
     search_space =  [[-10, 10], [-10, 10]]
-    problem_size = 5
-    min_num = 0
+    problem_size = 2
+    min_num = -5
     max_num = 5
 
+    xyz = [2.2029, 1.5707, 1.2850, 1.9231, 1.7205]
+    print('f is ',func(xyz))
 
     my_cell = []
     for i in range(number_cells):
