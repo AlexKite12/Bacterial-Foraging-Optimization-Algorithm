@@ -31,7 +31,7 @@ def makeData(minimum_num, maximum_num):
     return xgrid, ygrid, zgrid
 
 def generate_vector(min_length=-1, max_length=1, problem_size=3):
-    size = problem_size
+    size = problem_size 
     vec = np.random.uniform(min_length, max_length, size)
     return vec
 
@@ -47,14 +47,18 @@ def draw_3D_graphic(cells_coord, minimum_num, maximum_num):
         for cell in cells_coord:
             ax.scatter(cell[0], cell[1], cell[2], s=40, c='0.1')
         ax.legend()
-        plt.show()
+        #plt.show()
     except:
         print("Error")
 
-def draw_2D_graphic(first_p, second_p, legend='graph'):
-    plt.plot(first_p, second_p, legend = legend)
+def draw_2D_graphic(first_p, second_p, label='graph', file='figure'):
+    plt.plot(first_p, second_p, label = label, linewidth = 0.8)
     plt.legend()
-    plt.show()
+    # ax = plt.gca()
+    # ax.set_xlim([1, 10])
+    plt.savefig(file + '.png', format='png', dpi=100)
+    #plt.show()
+    #plt.close()
 
 
 class Cell(object):
@@ -123,7 +127,7 @@ def chemotaxis(cells, chem_steps, swim_length, step_size,
             new_cell = copy.copy(cells[i])
             for sl in range(swim_length):
                 new_cell.tumble(step_size, vec, func)
-                new_cell.compute_cell_interaction(cells)
+                new_cell.compute_cell_interaction(cells[:i] + cells[i+1:])
                 if new_cell.calculate_fitness() <= cells[i].fitness:
                     cells[i] = copy.copy(new_cell)
                 else:
@@ -136,7 +140,7 @@ def chemotaxis(cells, chem_steps, swim_length, step_size,
 
 def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s, 
     d_attract, w_attract, h_repellant, w_repellant, P_ed,
-    step_size, min_num=0, max_num=5):
+    step_size, min_num=0, max_num=5, file='results.txt', label = None):
     """ p: Dimension of the search space,
          S: Total number of bacteria in the population,
          Nc : The number of chemotactic steps,
@@ -146,43 +150,51 @@ def search_optimum(problem_size, cells_num, N_ed, N_re, N_c, N_s,
          Ped : Elimination-dispersal probability,
          C (i): The size of the step taken in the random direc
     """
+    #f = open(file, 'tw', encoding='utf-8')
     r = []
     cells = []
     for i in range(cells_num):
         cells.append(Cell(d_attract, w_attract, h_repellant, w_repellant))
         cells[i].initialize_coord(problem_size, min_num, max_num, func)
     best = None
-    for ed in range(N_ed):
-        print("elim_disp_steps = ", ed)
-        for re in range(N_re):
-            c_best, cells = chemotaxis(cells, N_c, N_s, step_size, d_attract, w_attract, h_repellant, w_repellant, problem_size)
-            if best == None or best.fitness > c_best.fitness:
-                best = copy.copy(c_best)
-            del c_best
-            print('best fitness = {}, coord = {}'.format(best.fitness, best.coord))
-            cells.sort()
-            cells = cells[:round(len(cells)/2)] + cells[:round(len(cells)/2)]
+    with Profiler() as optimum_profiler:
+        for ed in range(N_ed):
+            print("elim_disp_steps = ", ed)
+            #f.write("elim_disp_steps = {}\n".format(ed))
+            for re in range(N_re):
+                c_best, cells = chemotaxis(cells, N_c, N_s, step_size, d_attract, w_attract, h_repellant, w_repellant, problem_size)
+                if best == None or best.fitness > c_best.fitness:
+                    best = copy.copy(c_best)
+                del c_best
+                print('best fitness = {}, coord = {}'.format(best.fitness, best.coord))
+                #f.write('best fitness = {}, coord = {} \n'.format(best.fitness, best.coord))
+                cells.sort()
+                cells = cells[:round(len(cells)/2)] + cells[:round(len(cells)/2)]
+                r.append(best.coord[-1])
             for i in range(len(cells)):
                 if random.random() < P_ed:
                     cells[i] = Cell(d_attract, w_attract, h_repellant, w_repellant)
                     cells[i].initialize_coord(problem_size, min_num, max_num, func)
                     cells[i].compute_cell_interaction(cells)
                     cells[i].calculate_fitness()
-            r.append(best.fitness)
-    draw_2D_graphic(np.linspace(1, N_ed * N_re, N_ed * N_re), np.array(r))
+    #f.close()
+    if label == None:
+        label =  'Fitness for number of elimination-dispersal step'
+    draw_2D_graphic(np.linspace(1, N_ed, len(r)), np.array(r), label = label, file=file[:-4])
+    result = best.coord[-1]
 
 if __name__ == '__main__':
 
     #default coefficients
-    number_cells = 20
+    number_cells = 50
     d_attr = 0.1
     w_attr = 0.2
     h_repell = 0.1 # h_repell = d_attr
     w_repell = 10
     step_size = 0.01 #C[i]
-    elim_disp_steps = 20 # Ned is the number of elimination-dispersal steps
+    elim_disp_steps = 60 # Ned is the number of elimination-dispersal steps
     repro_steps = 4 # Nre is the number of reproduction steps
-    chem_steps = 100 # Nc is the number of chemotaxis steps
+    chem_steps = 80 # Nc is the number of chemotaxis steps
     swim_length = 4 # Ns is the number of swim steps for a given cell
     p_eliminate = 0.25 # Ped
 
@@ -197,17 +209,26 @@ if __name__ == '__main__':
     # ax.legend()
     # plt.show()
     search_space =  [[-10, 10], [-10, 10]]
-    problem_size = 2
+    problem_size = 5
     min_num = -5
     max_num = 5
+    #problems_size = [2,3,4,5]
+    #for problem_size in problems_size:
 
     xyz = [2.2029, 1.5707, 1.2850, 1.9231, 1.7205]
-    print('f is ',func(xyz))
+    print('f is ', func(xyz))
 
     my_cell = []
     for i in range(number_cells):
-        my_cell.append(Cell(d_attr, w_attr, h_repell, w_repell))
-        my_cell[i].initialize_coord(problem_size, min_num, max_num, func)
+    	my_cell.append(Cell(d_attr, w_attr, h_repell, w_repell))
+    	my_cell[i].initialize_coord(problem_size, min_num, max_num, func)
     cells = np.array(my_cell)
-    search_optimum(problem_size, number_cells, elim_disp_steps, repro_steps, chem_steps, swim_length,d_attr, w_attr, h_repell, w_repell, p_eliminate, step_size)
 
+    search_optimum(problem_size, number_cells, elim_disp_steps, repro_steps, chem_steps, swim_length,d_attr, w_attr, h_repell, w_repell, p_eliminate, step_size, file = 'results_.txt', label = 'function convergence for Dimension = {}'.format(problem_size))
+
+    fig, ax = plt.subplots()
+    #n, bins, patches = ax.hist(result, 50)
+    ax.set_title(r'Histogram of best fitness: N = 100')
+    #plt.show()
+
+# coord = [ 2.0708629   1.57689448  1.31537946  1.91802942  1.71699419 -4.73039794]
